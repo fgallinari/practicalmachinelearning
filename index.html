@@ -159,7 +159,10 @@ validation.set &lt;- training.set[-inTrain,]
 training.set &lt;- training.set[inTrain,]</code></pre>
 <p>Our train control is set to cross validation with 5 folds, parallel computation allowed, saving all the hold-out predictions for each resample and computing class probabilities for each resample.</p>
 <pre class="r"><code>trControl &lt;- trainControl(classProbs=TRUE, savePredictions=TRUE, allowParallel=TRUE, method=&quot;cv&quot;, number=5)</code></pre>
-<p>To get the model built faster, we are using the parallel library to use all the cores but one.</p>
+</div>
+<div id="building-the-models" class="section level3">
+<h3>Building the Models</h3>
+<p>To get the models built faster, we are using the parallel library to use all the cores but one. For this project, we are trying 3 different methods: - Random Forests - Gradient Boost - Support Vector Machines with Radial Kernel - And a combine of all the above</p>
 <pre class="r"><code>cluster &lt;- makeCluster(detectCores()-1)
 registerDoParallel(cluster)
 
@@ -173,7 +176,7 @@ system.time(rf.model &lt;- train(classe ~., method = &quot;rf&quot;, data = trai
 ## 
 ##     margin</code></pre>
 <pre><code>##    user  system elapsed 
-##  39.449   0.738 272.231</code></pre>
+##  37.271   0.715 242.312</code></pre>
 <pre class="r"><code>system.time(gbm.model &lt;- train(classe ~., method = &quot;gbm&quot;, data = training.set, trControl = trControl))</code></pre>
 <pre><code>## Loading required package: gbm</code></pre>
 <pre><code>## Loading required package: survival</code></pre>
@@ -205,7 +208,7 @@ system.time(rf.model &lt;- train(classe ~., method = &quot;rf&quot;, data = trai
 ##    140        0.1903             nan     0.1000    0.0012
 ##    150        0.1764             nan     0.1000    0.0018</code></pre>
 <pre><code>##    user  system elapsed 
-##  28.893   0.649 103.760</code></pre>
+##  27.758   0.306  85.439</code></pre>
 <pre class="r"><code>system.time(svm.model &lt;- train(classe ~., method = &quot;svmRadial&quot;, data = training.set, trControl = trControl))</code></pre>
 <pre><code>## Loading required package: kernlab</code></pre>
 <pre><code>## 
@@ -214,11 +217,104 @@ system.time(rf.model &lt;- train(classe ~., method = &quot;rf&quot;, data = trai
 ## 
 ##     alpha</code></pre>
 <pre><code>##    user  system elapsed 
-##  43.007   3.567 348.070</code></pre>
-<p>rf.result &lt;- predict(rf.model, newdata = validation.set) gbm.result &lt;- predict(gbm.model, newdata = validation.set) svm.result &lt;- predict(svm.model, newdata = validation.set) comb.df &lt;- data.frame(rf.result, gbm.result, svm.result, classe = validation.set$classe) system.time(comb.model &lt;- train(classe ~., method=“rf”, data = comb.df, trControl = trControl))</p>
-<p>comb.result &lt;- predict(comb.model, newdata = validation.set) stopCluster(cluster)</p>
-<p>confusionMatrix(validation.set<span class="math">\(classe, rf.result)\)</span>overall[‘Accuracy’] #0.994 varImp(rf.model) rf.model<span class="math">\(finalModel confusionMatrix(validation.set\)</span>classe, gbm.result)<span class="math">\(overall['Accuracy'] #0.962 confusionMatrix(validation.set\)</span>classe, svm.result)<span class="math">\(overall['Accuracy'] #0.805 confusionMatrix(validation.set\)</span>classe, comb.result)$overall[‘Accuracy’] #0.994</p>
-<p>testing.result &lt;- predict(rf.model, newdata = testing) testing.result ###Environment Used</p>
+##  40.442   3.218 274.888</code></pre>
+<p>After calculating them, we will predict with our validation set. Also, we are ensembling the 3 models into a random forest combine model, using the same train control.</p>
+<pre class="r"><code>rf.result &lt;- predict(rf.model, newdata = validation.set)
+gbm.result &lt;- predict(gbm.model, newdata = validation.set)
+svm.result &lt;- predict(svm.model, newdata = validation.set)
+comb.df &lt;- data.frame(rf.result, gbm.result, svm.result, classe = validation.set$classe)
+system.time(comb.model &lt;- train(classe ~., method=&quot;rf&quot;, data = comb.df, trControl = trControl))</code></pre>
+<pre><code>##    user  system elapsed 
+##   2.464   0.186  11.145</code></pre>
+<pre class="r"><code>comb.result &lt;- predict(comb.model, newdata = validation.set)
+stopCluster(cluster)</code></pre>
+<p>Now that we have all the models, we can compare the Accuracy of each of them.</p>
+<pre class="r"><code>confusionMatrix(validation.set$classe, rf.result)$overall['Accuracy']</code></pre>
+<pre><code>##  Accuracy 
+## 0.9928632</code></pre>
+<pre class="r"><code>varImp(rf.model)</code></pre>
+<pre><code>## rf variable importance
+## 
+##   only 20 most important variables shown (out of 52)
+## 
+##                   Overall
+## roll_belt          100.00
+## yaw_belt            82.48
+## magnet_dumbbell_z   71.32
+## magnet_dumbbell_y   66.59
+## pitch_belt          63.79
+## pitch_forearm       62.20
+## magnet_dumbbell_x   50.66
+## roll_forearm        50.62
+## accel_belt_z        46.30
+## magnet_belt_z       45.68
+## roll_dumbbell       45.01
+## magnet_belt_y       44.62
+## accel_dumbbell_y    43.15
+## accel_dumbbell_z    38.50
+## roll_arm            35.60
+## accel_forearm_x     32.27
+## gyros_belt_z        31.09
+## yaw_dumbbell        30.18
+## accel_dumbbell_x    30.08
+## accel_arm_x         29.85</code></pre>
+<pre class="r"><code>rf.model$finalModel</code></pre>
+<pre><code>## 
+## Call:
+##  randomForest(x = x, y = y, mtry = param$mtry) 
+##                Type of random forest: classification
+##                      Number of trees: 500
+## No. of variables tried at each split: 2
+## 
+##         OOB estimate of  error rate: 0.71%
+## Confusion matrix:
+##      A    B    C    D    E class.error
+## A 3902    3    0    0    1 0.001024066
+## B   15 2635    8    0    0 0.008653123
+## C    0   15 2379    2    0 0.007095159
+## D    0    0   42 2208    2 0.019538188
+## E    0    0    2    8 2515 0.003960396</code></pre>
+<pre class="r"><code>confusionMatrix(validation.set$classe, gbm.result)$overall['Accuracy']</code></pre>
+<pre><code>##  Accuracy 
+## 0.9631266</code></pre>
+<pre class="r"><code>confusionMatrix(validation.set$classe, svm.result)$overall['Accuracy']</code></pre>
+<pre><code>##  Accuracy 
+## 0.8042481</code></pre>
+<pre class="r"><code>confusionMatrix(validation.set$classe, comb.result)$overall['Accuracy']</code></pre>
+<pre><code>##  Accuracy 
+## 0.9928632</code></pre>
+</div>
+<div id="test-prediction" class="section level3">
+<h3>Test Prediction</h3>
+<p>As we can see above, both the rf.model and the comb.model had a high accuracy, in this case the same. For simplicity matters, we will keep the rf.model to predict the classes for the final test. Also, the estimated error rate should be something below 1%, as we should see next.</p>
+<pre class="r"><code>rf.model$finalModel</code></pre>
+<pre><code>## 
+## Call:
+##  randomForest(x = x, y = y, mtry = param$mtry) 
+##                Type of random forest: classification
+##                      Number of trees: 500
+## No. of variables tried at each split: 2
+## 
+##         OOB estimate of  error rate: 0.71%
+## Confusion matrix:
+##      A    B    C    D    E class.error
+## A 3902    3    0    0    1 0.001024066
+## B   15 2635    8    0    0 0.008653123
+## C    0   15 2379    2    0 0.007095159
+## D    0    0   42 2208    2 0.019538188
+## E    0    0    2    8 2515 0.003960396</code></pre>
+<pre class="r"><code>testing.result &lt;- predict(rf.model, newdata = testing)
+testing.result</code></pre>
+<pre><code>##  [1] B A B A A E D B A A B C B A E E A B B B
+## Levels: A B C D E</code></pre>
+<p>To be honest, I didn’t expect to get all the answers correct when testing the predictions above.</p>
+</div>
+<div id="conclusion" class="section level3">
+<h3>Conclusion</h3>
+<p>Although all the models had great chances to be chosen, the reason the random forest was picked is that this method minimizes the variance, therefore the overfitting. In other words, if we have an high accuracy in out training stage, it will continue doing a good job at testing with new data.</p>
+</div>
+<div id="environment-used" class="section level3">
+<h3>Environment Used</h3>
 <pre class="r"><code>sessionInfo()</code></pre>
 <pre><code>## R version 3.2.3 (2015-12-10)
 ## Platform: x86_64-apple-darwin13.4.0 (64-bit)
