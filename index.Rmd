@@ -1,22 +1,107 @@
 ---
 title: "Practical Machine Learning Course Project"
 author: "Felipe Gallinari"
-date: "9 de março de 2016"
+date: "March 9, 2016"
 output: html_document
 ---
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+###Introduction
+This document describes the steps used to predict the classes of the data from the final assignment of the Coursera Practical Machine Learning Course.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+>Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. (...) One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify **how well** they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+The above text was copied from the course page.
+
+###Before Starting
+
+Before we start building our model, we need to download the data from the website and also loading the libraries we are going to use.
+The training data can be downloaded here:
+
+- https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+And the testing data from here:
+
+- https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The seed is set here for *reproducibility*.
+```{r, message=F}
+library(caret)
+library(doParallel)
+
+set.seed(123456)
+
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+```
+
+###Cleansing Data
+
+After we load and explore the data, it's easy to see that there are some columns that have missing values. In other words, if there is any NA or blank observation in the column, we will not use it as a good predictor.
+Also, we want only predictors that are related to device measures (arm, belt, dumbbell, forearm) and the objective (*classe*) itself
 
 ```{r}
-summary(cars)
+isBadColumn <- sapply(training, function(obs) any(is.na(obs) | obs == ""))
+isDeviceMeasureOrObjective <- grepl("belt|forearm|dumbbell|arm|classe", names(training))
+isGoodPredictor <- !isBadColumn & isDeviceMeasureOrObjective
 ```
 
-You can also embed plots, for example:
+Now, we start using a new Data Frame, with 53 features.
 
-```{r, echo=FALSE}
-plot(cars)
+```{r}
+training.set <- training[,isGoodPredictor]
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Make the objective variable a factor:
+
+```{r}
+training.set$classe <- as.factor(training.set$classe)
+```
+
+To get a better result, we will split our training set, to get a validation set before testing it. Here we are going to use 70% for the training set and the remaining 30% to validate.
+
+```{r}
+inTrain = createDataPartition(training.set$classe, p = 0.7, list=FALSE)
+
+validation.set <- training.set[-inTrain,]
+training.set <- training.set[inTrain,]
+```
+
+Our train control is set to cross validation with 5 folds, parallel computation allowed, saving all the hold-out predictions for each resample and computing class probabilities for each resample.
+
+```{r}
+trControl <- trainControl(classProbs=TRUE, savePredictions=TRUE, allowParallel=TRUE, method="cv", number=5)
+```
+
+To get the model built faster, we are using the parallel library to use all the cores but one.
+```{r}
+cluster <- makeCluster(detectCores()-1)
+registerDoParallel(cluster)
+
+system.time(rf.model <- train(classe ~., method = "rf", data = training.set, trControl = trControl))
+system.time(gbm.model <- train(classe ~., method = "gbm", data = training.set, trControl = trControl))
+system.time(svm.model <- train(classe ~., method = "svmRadial", data = training.set, trControl = trControl))
+```
+
+rf.result <- predict(rf.model, newdata = validation.set)
+gbm.result <- predict(gbm.model, newdata = validation.set)
+svm.result <- predict(svm.model, newdata = validation.set)
+comb.df <- data.frame(rf.result, gbm.result, svm.result, classe = validation.set$classe)
+system.time(comb.model <- train(classe ~., method="rf", data = comb.df, trControl = trControl))
+
+comb.result <- predict(comb.model, newdata = validation.set)
+stopCluster(cluster)
+
+
+confusionMatrix(validation.set$classe, rf.result)$overall['Accuracy'] #0.994
+varImp(rf.model)
+rf.model$finalModel
+confusionMatrix(validation.set$classe, gbm.result)$overall['Accuracy'] #0.962
+confusionMatrix(validation.set$classe, svm.result)$overall['Accuracy'] #0.805
+confusionMatrix(validation.set$classe, comb.result)$overall['Accuracy'] #0.994
+
+testing.result <- predict(rf.model, newdata = testing)
+testing.result
+###Environment Used
+```{r}
+sessionInfo()
+```
